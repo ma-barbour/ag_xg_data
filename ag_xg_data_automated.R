@@ -16,14 +16,18 @@ library(jsonlite)
 library(lubridate)
 library(zoo)
 
-current_season <- 20242025
-#current_season <- 20252026
+current_season <- 20252026
 
-current_date <- as.Date("2025-04-18")
-#current_date <- Sys.Date()
+#current_date <- as.Date("2025-04-18")
+current_date <- Sys.Date()
 
 toi_filter_5 <- 20
-toi_filter_season <- 100
+toi_filter_season <- case_when(current_date < as.Date("2025-11-01") ~ 20,
+                               current_date < as.Date("2025-12-01") ~ 50,
+                               current_date < as.Date("2026-01-01") ~ 100,
+                               current_date < as.Date("2026-02-01") ~ 150,
+                               current_date < as.Date("2026-03-01") ~ 200,
+                               TRUE ~ 250)
 
 refresh_date <- current_date - 8
 
@@ -91,9 +95,9 @@ while (retry_count < max_retries) {
                         mutate(assists = round((first_assists_60 * (toi / 60)) + (second_assists_60 * (toi / 60)))) |>
                         mutate(points = goals + assists) |>
                         group_by(position) |>
-                        mutate(i_shots_60_rank = as.integer(rank(-shots_60))) |>
-                        mutate(i_cf_60_rank = as.integer(rank(-i_cf_60))) |>
-                        mutate(i_scf_60_rank = as.integer(rank(-i_scf_60))) |>
+                        mutate(i_shots_60_rank = as.integer(rank(-shots_60, ties.method = "first"))) |>
+                        mutate(i_cf_60_rank = as.integer(rank(-i_cf_60, ties.method = "first"))) |>
+                        mutate(i_scf_60_rank = as.integer(rank(-i_scf_60, ties.method = "first"))) |>
                         ungroup() |>
                         select(skater_id,
                                #skater = player,
@@ -161,8 +165,8 @@ while (retry_count < max_retries) {
                 nst_data_5gp_oi <- nst_data_5gp_oi |>
                         mutate(position = if_else(position == "D", "D", "F")) |>
                         group_by(position) |>
-                        mutate(oi_cf_60_rank = as.integer(rank(-cf_60))) |>
-                        mutate(oi_scf_60_rank = as.integer(rank(-scf_60))) |>
+                        mutate(oi_cf_60_rank = as.integer(rank(-cf_60, ties.method = "first"))) |>
+                        mutate(oi_scf_60_rank = as.integer(rank(-scf_60, ties.method = "first"))) |>
                         ungroup() |>
                         select(skater_id,
                                oi_cf_60_rank,
@@ -224,9 +228,9 @@ while (retry_count < max_retries) {
                         mutate(goals_82 = round((goals / gp) * 82)) |>
                         mutate(points_82 = round((points / gp) * 82)) |>
                         group_by(position) |>
-                        mutate(i_shots_60_rank = as.integer(rank(-shots_60))) |>
-                        mutate(i_cf_60_rank = as.integer(rank(-i_cf_60))) |>
-                        mutate(i_scf_60_rank = as.integer(rank(-i_scf_60))) |>
+                        mutate(i_shots_60_rank = as.integer(rank(-shots_60, ties.method = "first"))) |>
+                        mutate(i_cf_60_rank = as.integer(rank(-i_cf_60, ties.method = "first"))) |>
+                        mutate(i_scf_60_rank = as.integer(rank(-i_scf_60, ties.method = "first"))) |>
                         ungroup() |>
                         select(skater_id,
                                #skater = player,
@@ -295,8 +299,8 @@ while (retry_count < max_retries) {
                 nst_data_season_oi <- nst_data_season_oi |>
                         mutate(position = if_else(position == "D", "D", "F")) |>
                         group_by(position) |>
-                        mutate(oi_cf_60_rank = as.integer(rank(-cf_60))) |>
-                        mutate(oi_scf_60_rank = as.integer(rank(-scf_60))) |>
+                        mutate(oi_cf_60_rank = as.integer(rank(-cf_60, ties.method = "first"))) |>
+                        mutate(oi_scf_60_rank = as.integer(rank(-scf_60, ties.method = "first"))) |>
                         ungroup() |>
                         select(skater_id,
                                oi_cf_60_rank,
@@ -490,6 +494,7 @@ get_on_ice_html <- readRDS("~/18_skaters/r_studio/xg_model/get_on_ice_html.rds")
 
 new_game_ids <- schedule |>
         filter(date >= refresh_date) |>
+        filter(date < current_date) |>
         select(game_id) |>
         as_vector()
 
@@ -557,6 +562,7 @@ if(!file.exists("full_season_pbp.rds")) {
         
         write_rds(new_pbp_data,
                   "full_season_pbp.rds")
+        full_season_pbp <- new_pbp_data
         
 } else {
         
@@ -575,6 +581,7 @@ if(!file.exists("full_season_oi.rds")) {
         
         write_rds(new_oi_data,
                   "full_season_oi.rds")
+        full_season_oi <- new_oi_data
         
 } else {
         
@@ -687,8 +694,8 @@ full_season <- nst_data_season |>
         mutate(i_xg_raw_60 = i_xg_raw / (toi / 60)) |>
         mutate(i_xg_adjusted_60 = i_xg_adjusted / (toi / 60)) |>
         group_by(position) |>
-        mutate(i_xg_raw_60_rank = rank(-i_xg_raw_60)) |>
-        mutate(i_xg_adjusted_60_rank = rank(-i_xg_adjusted_60),
+        mutate(i_xg_raw_60_rank = rank(-i_xg_raw_60, ties.method = "first")) |>
+        mutate(i_xg_adjusted_60_rank = rank(-i_xg_adjusted_60, ties.method = "first"),
                .after = i_scf_60_rank) |>
         ungroup() |>
         arrange(i_xg_adjusted_60_rank, position)
@@ -744,8 +751,8 @@ full_season <- full_season |>
         mutate(oi_xg_raw_60 = oi_xg_raw / (toi / 60)) |>
         mutate(oi_xg_adjusted_60 = oi_xg_adjusted / (toi / 60)) |>
         group_by(position) |>
-        mutate(oi_xg_raw_60_rank = rank(-oi_xg_raw_60)) |>
-        mutate(oi_xg_adjusted_60_rank = rank(-oi_xg_adjusted_60),
+        mutate(oi_xg_raw_60_rank = rank(-oi_xg_raw_60, ties.method = "first")) |>
+        mutate(oi_xg_adjusted_60_rank = rank(-oi_xg_adjusted_60, ties.method = "first"),
                .after = oi_scf_60_rank) |>
         ungroup() |>
         mutate(skt_xg_adjusted_percent = i_xg_adjusted / oi_xg_adjusted,
@@ -757,6 +764,8 @@ full_season <- full_season |>
                sh_percent,
                oi_sh_percent) |>
         select(-toi)
+
+full_season[is.na(full_season)] <- 0
 
 ### 5GP SUMMARY ################################################################
 
@@ -849,9 +858,9 @@ five_gp <- five_gp |>
         mutate(i_xg_adjusted_60 = i_xg_adjusted / (toi / 60)) |>
         mutate(oi_xg_adjusted_60 = oi_xg_adjusted / (toi / 60)) |>
         group_by(position) |>
-        mutate(i_xg_adjusted_60_rank = rank(-i_xg_adjusted_60),
+        mutate(i_xg_adjusted_60_rank = rank(-i_xg_adjusted_60, ties.method = "first"),
                .after = i_scf_60_rank) |>
-        mutate(oi_xg_adjusted_60_rank = rank(-oi_xg_adjusted_60),
+        mutate(oi_xg_adjusted_60_rank = rank(-oi_xg_adjusted_60, ties.method = "first"),
                .after = oi_scf_60_rank) |>
         ungroup() |>
         mutate(skt_xg_adjusted_percent = i_xg_adjusted / oi_xg_adjusted,
@@ -986,6 +995,18 @@ if (is.null(error_message) == FALSE) {
 data_validation <- data_validation |>
         left_join(teams_data, by = "skater_id") |>
         arrange(skater)
+
+# Add position to data validation
+
+skater_positions <- skater_names_data[["data"]] |>
+        tibble() |>
+        unnest_wider(1) |>
+        select(skater_id = playerId,
+               pos = positionCode) |>
+        mutate(pos = if_else(pos == "D", "D", "F"))
+
+data_validation <- data_validation |>
+        left_join(skater_positions, by = "skater_id") 
 
 ### PUSH TO GOOGLE #############################################################
 
