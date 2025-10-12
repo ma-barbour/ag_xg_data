@@ -1008,6 +1008,20 @@ skater_positions <- skater_names_data[["data"]] |>
 data_validation <- data_validation |>
         left_join(skater_positions, by = "skater_id") 
 
+# Fix for double Elias Pettersson
+
+full_season <- full_season |>
+        mutate(skater = if_else(skater_id == 8483678, "Elias Pettersson D", skater)) |>
+        mutate(skater = if_else(skater_id == 8480012, "Elias Pettersson F", skater))
+
+five_gp <- five_gp |>
+        mutate(skater = if_else(skater_id == 8483678, "Elias Pettersson D", skater)) |>
+        mutate(skater = if_else(skater_id == 8480012, "Elias Pettersson F", skater))
+
+data_validation <- data_validation |>
+        mutate(skater = if_else(skater_id == 8483678, "Elias Pettersson D", skater)) |>
+        mutate(skater = if_else(skater_id == 8480012, "Elias Pettersson F", skater))
+
 ### PUSH TO GOOGLE #############################################################
 
 library(googledrive)
