@@ -365,11 +365,13 @@ while (retry_count < max_retries) {
                         select(skater_id = playerId,
                                skater = skaterFullName,
                                game_id = gameId,
-                               date = gameDate) |>
+                               date = gameDate,
+                               home_away = homeRoad) |>
                         arrange(desc(date)) |>
                         arrange(skater_id) |>
                         group_by(skater_id) |>
-                        mutate(game_count = row_number()) |>
+                        mutate(game_count = row_number(),
+                               .after = date) |>
                         ungroup()},
                 
                 # This deals with errors
@@ -1136,6 +1138,100 @@ team_xg_data <- season_team_xg |>
         left_join(five_gp_team_xg, by = "team") |>
         mutate(logo = paste0("https://assets.nhle.com/logos/nhl/svg/", team, "_light.svg"))
 
+# Add 5v5 on-ice xG percentage last 5 GP
+
+five_game_oi_xg_perc <- list()
+
+for(i in 1:length(skater_ids_5gp)) {
+        
+        print(paste0("Computing on-ice xG% for: ", skater_ids_5gp[i], " (", i, ")"))
+        
+        loop_games <- nhl_gl_data |>
+                filter(skater_id == skater_ids_5gp[i]) 
+        loop_game_ids <- loop_games$game_id
+        
+        loop_data <- full_season_pbp |>
+                filter(game_id %in% loop_game_ids) |>
+                left_join(xg_adjustment_2025, by = "shooter_id") |>
+                mutate(xg_adjustment_500 = if_else(is.na(xg_adjustment_500) == TRUE, 1, xg_adjustment_500)) |>
+                mutate(xg_adjusted = xg * xg_adjustment_500) |>
+                filter(away_goalies_oi == 1) |>
+                filter(home_goalies_oi == 1) |>
+                filter(away_skaters_oi == 5) |>
+                filter(home_skaters_oi == 5) |>
+                left_join(loop_games |> select(game_id, home_away),
+                          by = "game_id")
+        
+        oi_xg_home <- loop_data |>
+                filter(home_away == "H") %>%
+                filter(if_any(c(home_on_ice_1:home_on_ice_5), ~ . == skater_ids_5gp[i]))
+        
+        if(length(oi_xg_home$game_id) > 0) {
+                oi_xg_home <- oi_xg_home  |>
+                        group_by(event_team_home) |>
+                        summarise(sum_xg = sum(xg_adjusted)) |>
+                        pivot_wider(names_from = event_team_home,
+                                    values_from = sum_xg) |>
+                        rename(any_of(c(home_xg_for = "1",
+                                        home_xg_against = "0")))
+                
+                if(!"home_xg_for" %in% names(oi_xg_home)) {
+                        oi_xg_home$home_xg_for <- 0}
+                
+                if(!"home_xg_against" %in% names(oi_xg_home)) {
+                        oi_xg_home$home_xg_against <- 0}
+                
+                oi_xg_home <- oi_xg_home |>
+                        mutate(skater_id = skater_ids_5gp[i],
+                               .before = home_xg_against)} else {
+                                       oi_xg_home <- tibble(
+                                               skater_id = skater_ids_5gp[i],
+                                               home_xg_for = 0,
+                                               home_xg_against = 0)} 
+        
+        oi_xg_away <- loop_data |>
+                filter(home_away == "R") %>%
+                filter(if_any(c(away_on_ice_1:away_on_ice_5), ~ . == skater_ids_5gp[i])) 
+        
+        if(length(oi_xg_away$game_id) > 0) {
+                oi_xg_away <- oi_xg_away |> 
+                        group_by(event_team_home) |>
+                        summarise(sum_xg = sum(xg_adjusted)) |>
+                        pivot_wider(names_from = event_team_home,
+                                    values_from = sum_xg) |>
+                        rename(any_of(c(away_xg_for = "0",
+                                        away_xg_against = "1")))
+                
+                if(!"away_xg_for" %in% names(oi_xg_away)) {
+                        oi_xg_away$away_xg_for <- 0}
+                
+                if(!"away_xg_against" %in% names(oi_xg_away)) {
+                        oi_xg_away$away_xg_against <- 0}} else {
+                                oi_xg_away <- tibble(
+                                        away_xg_for = 0,
+                                        away_xg_against = 0)}
+        
+        oi_xg_perc <- oi_xg_home |>
+                bind_cols(oi_xg_away) |>
+                mutate(oi_xg_for = home_xg_for + away_xg_for) |>
+                mutate(oi_xg_against = home_xg_against + away_xg_against) |>
+                select(skater_id,
+                       oi_xg_for,
+                       oi_xg_against) |>
+                mutate(oi_xg_perc = oi_xg_for / (oi_xg_for + oi_xg_against))
+        
+        five_game_oi_xg_perc[[i]] <- oi_xg_perc
+        
+}
+
+five_game_oi_xg_perc <- five_game_oi_xg_perc |>
+        bind_rows() |>
+        arrange(-oi_xg_perc)
+
+five_game_oi_xg_perc <- five_game_oi_xg_perc |>
+        left_join(data_validation |> select(skater_id, skater),
+                  by = "skater_id")
+        
 ### PUSH TO GOOGLE #############################################################
 
 library(googledrive)
