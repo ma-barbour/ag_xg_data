@@ -1024,7 +1024,7 @@ data_validation <- data_validation |>
         mutate(skater = if_else(skater_id == 8483678, "Elias Pettersson D", skater)) |>
         mutate(skater = if_else(skater_id == 8480012, "Elias Pettersson F", skater))
 
-# Add team level xG data - full season
+# Add team level all-strengths xG data - full season
 
 season_home_games_xg <- full_season_xg_oi |>
         group_by(game_id, date, home_team, away_team) |>
@@ -1068,7 +1068,7 @@ season_team_xg <- season_home_team_xg |>
                opp_xg_season,
                xg_perc_season)
 
-# Add team level xG data - last 5 GP
+# Add team level all-strengths xG data - last 5 GP
 
 five_gp_team_xg <- list()
 teams <- season_team_xg$team
@@ -1138,7 +1138,137 @@ team_xg_data <- season_team_xg |>
         left_join(five_gp_team_xg, by = "team") |>
         mutate(logo = paste0("https://assets.nhle.com/logos/nhl/svg/", team, "_light.svg"))
 
-# Add 5v5 on-ice xG percentage last 5 GP
+# Add team level 5v5 xG data - full season
+
+season_home_games_xg_5v5 <- full_season_xg_oi |>
+        filter(away_goalies_oi == 1) |>
+        filter(home_goalies_oi == 1) |>
+        filter(away_skaters_oi == 5) |>
+        filter(home_skaters_oi == 5) |>
+        group_by(game_id, date, home_team, away_team) |>
+        filter(event_team_home == 1) |>
+        summarise(home_xg = sum(xg_adj),
+                  .groups = "drop")
+
+season_away_games_xg_5v5 <- full_season_xg_oi |>
+        filter(away_goalies_oi == 1) |>
+        filter(home_goalies_oi == 1) |>
+        filter(away_skaters_oi == 5) |>
+        filter(home_skaters_oi == 5) |>
+        group_by(game_id, date, home_team, away_team) |>
+        filter(event_team_home == 0) |>
+        summarise(away_xg = sum(xg_adj),
+                  .groups = "drop")
+
+season_games_xg_5v5 <- season_home_games_xg_5v5 |>
+        left_join(season_away_games_xg_5v5 |> select(game_id, away_xg),
+                  by = "game_id")
+
+season_home_team_xg_5v5 <- season_games_xg_5v5 |>
+        group_by(home_team) |>
+        summarise(home_team_xg = sum(home_xg),
+                  home_opp_xg = sum(away_xg),
+                  .groups = "drop") |>
+        rename(team = home_team)
+
+season_away_team_xg_5v5 <- season_games_xg_5v5 |>
+        group_by(away_team) |>
+        summarise(away_team_xg = sum(away_xg),
+                  away_opp_xg = sum(home_xg),
+                  .groups = "drop") |>
+        rename(team = away_team)
+
+season_team_xg_5v5 <- season_home_team_xg_5v5 |>
+        left_join(season_away_team_xg_5v5,
+                  by = "team") |>
+        mutate(xg_season_5v5 = home_team_xg + away_team_xg) |>
+        mutate(opp_xg_season_5v5 = home_opp_xg + away_opp_xg) |>
+        mutate(xg_perc_season_5v5 = xg_season_5v5 / (xg_season_5v5 + opp_xg_season_5v5)) |>
+        arrange(team) |>
+        select(team,
+               xg_season_5v5,
+               opp_xg_season_5v5,
+               xg_perc_season_5v5)
+
+team_xg_data <- team_xg_data |>
+        left_join(season_team_xg_5v5,
+                  by = "team")
+
+# Add team level all-strengths xG data - last 5 GP
+
+five_gp_team_xg_5v5 <- list()
+teams <- season_team_xg$team
+
+for(i in 1:length(teams)) {
+        
+        loop_xg_data <- full_season_xg_oi |>
+                filter(away_goalies_oi == 1) |>
+                filter(home_goalies_oi == 1) |>
+                filter(away_skaters_oi == 5) |>
+                filter(home_skaters_oi == 5) |>
+                filter(home_team == teams[i] | away_team == teams[i]) |>
+                arrange(-game_id) |>
+                mutate(game_number = cumsum(!duplicated(game_id))) |>
+                filter(game_number <= 5)
+        
+        loop_five_gp_home_games_xg <- loop_xg_data |>
+                group_by(game_id, date, home_team, away_team) |>
+                filter(event_team_home == 1) |>
+                summarise(home_xg = sum(xg_adj),
+                          .groups = "drop")
+        
+        loop_five_gp_away_games_xg <- loop_xg_data |>
+                group_by(game_id, date, home_team, away_team) |>
+                filter(event_team_home == 0) |>
+                summarise(away_xg = sum(xg_adj),
+                          .groups = "drop")
+        
+        loop_five_gp_games_xg <- loop_five_gp_home_games_xg |>
+                full_join(loop_five_gp_away_games_xg |> select(game_id, away_xg),
+                          by = "game_id")
+        
+        loop_five_gp_home_team_xg <- loop_five_gp_games_xg |>
+                group_by(home_team) |>
+                summarise(home_team_xg = sum(home_xg),
+                          home_opp_xg = sum(away_xg),
+                          .groups = "drop") |>
+                rename(team = home_team)
+        
+        loop_five_gp_away_team_xg <- loop_five_gp_games_xg |>
+                group_by(away_team) |>
+                summarise(away_team_xg = sum(away_xg),
+                          away_opp_xg = sum(home_xg),
+                          .groups = "drop") |>
+                rename(team = away_team)
+        
+        loop_five_gp_team_xg <- loop_five_gp_home_team_xg |>
+                full_join(loop_five_gp_away_team_xg,
+                          by = "team") |>
+                mutate(across(where(is.numeric), ~replace_na(., 0))) |>
+                mutate(xg_five_gp_5v5 = home_team_xg + away_team_xg) |>
+                mutate(opp_xg_five_gp_5v5 = home_opp_xg + away_opp_xg) |>
+                mutate(xg_perc_five_gp_5v5 = xg_five_gp_5v5 / (xg_five_gp_5v5 + opp_xg_five_gp_5v5))  |>
+                arrange(team) |>
+                select(team,
+                       xg_five_gp_5v5,
+                       opp_xg_five_gp_5v5,
+                       xg_perc_five_gp_5v5)
+        
+        loop_five_gp_team_xg <- loop_five_gp_team_xg |>
+                filter(team == teams[i])
+        
+        five_gp_team_xg_5v5[[i]] <- loop_five_gp_team_xg
+        
+}
+
+five_gp_team_xg_5v5 <- five_gp_team_xg_5v5 |>
+        bind_rows()
+
+team_xg_data <- team_xg_data |>
+        left_join(five_gp_team_xg_5v5,
+                  by = "team")
+
+# Add skater 5v5 on-ice xG percentage last 5 GP
 
 five_game_oi_xg_perc <- list()
 
@@ -1226,9 +1356,7 @@ for(i in 1:length(skater_ids_5gp)) {
 
 five_game_oi_xg_perc <- five_game_oi_xg_perc |>
         bind_rows() |>
-        arrange(-oi_xg_perc)
-
-five_game_oi_xg_perc <- five_game_oi_xg_perc |>
+        arrange(-oi_xg_perc) |>
         left_join(data_validation |> select(skater_id, skater),
                   by = "skater_id")
         
