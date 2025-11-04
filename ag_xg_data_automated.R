@@ -1270,6 +1270,19 @@ team_xg_data <- team_xg_data |>
 
 # Add skater 5v5 on-ice xG percentage last 5 GP
 
+# Get 5v5 TOI data from NST 
+
+#### THIS NEEDS TO BE UPDATED WITH TRY CATCH 
+
+toi_5v5_url <- paste0("https://www.naturalstattrick.com/playerteams.php?fromseason=", current_season, "&thruseason=", current_season, "&stype=2&sit=5v5&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=gpteam&fd=&td=&tgp=5&lines=single&draftteam=ALL")
+
+toi_5v5 <- nst_pull(toi_5v5_url) |>
+        mutate(toi_gp_5v5 = toi / gp) |>
+        select(skater_id,
+               toi_gp_5v5)
+
+# Loop through each skater
+
 five_game_oi_xg_perc <- list()
 
 for(i in 1:length(skater_ids_5gp)) {
@@ -1345,10 +1358,12 @@ for(i in 1:length(skater_ids_5gp)) {
                 bind_cols(oi_xg_away) |>
                 mutate(oi_xg_for = home_xg_for + away_xg_for) |>
                 mutate(oi_xg_against = home_xg_against + away_xg_against) |>
+                mutate(gp = length(loop_game_ids)) |>
                 select(skater_id,
+                       gp,
                        oi_xg_for,
                        oi_xg_against) |>
-                mutate(oi_xg_perc = oi_xg_for / (oi_xg_for + oi_xg_against))
+                mutate(oi_xg_perc = oi_xg_for / (oi_xg_for + oi_xg_against)) 
         
         five_game_oi_xg_perc[[i]] <- oi_xg_perc
         
@@ -1357,8 +1372,21 @@ for(i in 1:length(skater_ids_5gp)) {
 five_game_oi_xg_perc <- five_game_oi_xg_perc |>
         bind_rows() |>
         arrange(-oi_xg_perc) |>
-        left_join(data_validation |> select(skater_id, skater),
-                  by = "skater_id")
+        left_join(data_validation,
+                  by = "skater_id") |>
+        left_join(toi_5v5,
+                  by = "skater_id") |>
+        arrange(-toi_gp_5v5) |>
+        arrange(desc(pos))|>
+        arrange(team) |>
+        select(skater,
+               pos,
+               team,
+               gp,
+               toi_gp_5v5,
+               oi_xg_for,
+               oi_xg_against,
+               oi_xg_perc)
         
 ### PUSH TO GOOGLE #############################################################
 
@@ -1392,4 +1420,8 @@ sheet_write(data_validation,
 sheet_write(team_xg_data,
             ss = g_sheet,
             sheet = "team_xg_data")
+
+sheet_write(five_game_oi_xg_perc,
+            ss = g_sheet,
+            sheet = "five_gp_oi_xg_data")
 
