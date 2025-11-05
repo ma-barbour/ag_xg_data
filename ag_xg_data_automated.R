@@ -1387,6 +1387,11 @@ five_game_oi_xg_perc <- five_game_oi_xg_perc |>
                oi_xg_for,
                oi_xg_against,
                oi_xg_perc)
+
+five_game_oi_xg_perc <- five_game_oi_xg_perc |>
+        mutate(oi_xg_for_60 = ((oi_xg_for / gp) /  toi_gp_5v5) * 60) |>
+        mutate(oi_xg_against_60 = ((oi_xg_against / gp) /  toi_gp_5v5) * 60)
+        
         
 ### PUSH TO GOOGLE #############################################################
 
