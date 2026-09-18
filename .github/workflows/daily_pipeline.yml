@@ -1,0 +1,57 @@
+name: Daily Apples & Ginos Pipeline
+
+on:
+  schedule:
+    # Runs every day at 10:00 AM UTC
+    - cron: '0 9 * * *' 
+  workflow_dispatch: # Allows you to manually trigger the script from the Actions tab
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Crucial: Allows the action to push the updated .rds files back to the repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true # Pulls pre-compiled binaries to drastically speed up package installation
+
+      - name: Install R Dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::tidymodels
+            any::xgboost
+            any::readr
+            any::stringr
+            any::bundle
+            any::rvest
+            any::janitor
+            any::jsonlite
+            any::lubridate
+            any::zoo
+            any::googledrive
+            any::googlesheets4
+
+      - name: Create Google Auth File
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: echo "$GCP_SERVICE_ACCOUNT_KEY" > gcp_auth.json
+
+      - name: Run R Script
+        run: Rscript ag_xg_data_auto_github.R
+
+      - name: Commit and Push Updated Data
+        # This saves full_season_pbp.rds and full_season_oi.rds back to the repo 
+        # so the script doesn't have to pull the entire season every single day.
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add *.rds
+          git commit -m "Auto-update season PBP and OI data" || echo "No data changes to commit"
+          git push
