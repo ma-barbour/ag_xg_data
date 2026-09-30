@@ -1434,6 +1434,8 @@ g_sheet <- "https://docs.google.com/spreadsheets/d/1FxlF_jSAyqgHbhx7SoD5ha5LxkJC
 drive_auth(path = "gcp_auth.json")
 gs4_auth(path = "gcp_auth.json")
 
+#gs4_auth(email = "18skaters@gmail.com")
+
 sheet_write(full_season, 
             ss = g_sheet, 
             sheet = "full_season")
