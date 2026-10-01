@@ -2,9 +2,8 @@ name: Daily Apples & Ginos Pipeline
 
 on:
   schedule:
-    # Runs every day at 10:00 AM UTC
-    - cron: '0 9 * * *' 
-  workflow_dispatch: # Allows you to manually trigger the script from the Actions tab
+    - cron: '0 6 * * *' 
+  workflow_dispatch: 
 
 jobs:
   run-pipeline:
