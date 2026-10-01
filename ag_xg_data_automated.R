@@ -1,10 +1,9 @@
 # This script generates xG data to be shared with Apples & Ginos
 # It needs to be integrated with data pulled from Natural Stat Trick (skater names)
-# It will be run automatically using task scheduler
 
 ### BASIC SETUP ################################################################
 
-setwd("~/18_skaters/r_studio/every_day/ag_xg_data")
+#setwd("~/18_skaters/r_studio/every_day/ag_xg_data")
 
 library(tidymodels)
 library(readr)
@@ -18,18 +17,19 @@ library(zoo)
 
 current_season <- 20252026
 
-#current_date <- as.Date("2025-04-18")
-current_date <- Sys.Date()
+current_date <- as.Date("2026-04-18")
+#current_date <- Sys.Date()
 
 toi_filter_5 <- 20
-toi_filter_season <- case_when(current_date < as.Date("2025-11-01") ~ 20,
-                               current_date < as.Date("2025-12-01") ~ 50,
-                               current_date < as.Date("2026-01-01") ~ 100,
-                               current_date < as.Date("2026-02-01") ~ 150,
-                               current_date < as.Date("2026-03-01") ~ 200,
+toi_filter_season <- case_when(current_date < as.Date("2026-11-01") ~ 20,
+                               current_date < as.Date("2026-12-01") ~ 50,
+                               current_date < as.Date("2027-01-01") ~ 100,
+                               current_date < as.Date("2027-02-01") ~ 150,
+                               current_date < as.Date("2027-03-01") ~ 200,
                                TRUE ~ 250)
 
 refresh_date <- current_date - 8
+#refresh_date <- current_date - 28
 
 refresh_all_data = FALSE
 #refresh_all_data = TRUE
@@ -43,12 +43,16 @@ sleep_time <- 5
 
 nst_pull <- function(url) {
         
+        nst_key <- "key=53ae18836d6d792dd99ce6262ef1ea62"
+        
+        data_url <- paste0(str_replace(url, "https://www.naturalstattrick", "https://data.naturalstattrick"), "&", nst_key)
+        
         nst_css_selector <- "body > div:nth-child(1) > div:nth-child(8) > div > div"
         
-        nst_page <- read_html(url) 
+        nst_page <- read_html(data_url) 
         
-        nst_data <- html_element(nst_page, css = nst_css_selector) |>
-                html_table()  |>
+        nst_data <- html_element(nst_page, css = nst_css_selector) %>%
+                html_table()  %>%
                 as.data.frame()
         
         nst_data <- nst_data[-1]
@@ -57,8 +61,8 @@ nst_pull <- function(url) {
         
         nst_ids <- as.data.frame(html_attr(html_nodes(nst_page, "a"), "href"))
         names(nst_ids)[1] <- "href"
-        nst_ids <- mutate(nst_ids, length = nchar(nst_ids$href)) |>
-                filter(length > 85) |>
+        nst_ids <- mutate(nst_ids, length = nchar(nst_ids$href)) %>%
+                filter(length > 85) %>%
                 select(c(1))
         nst_ids$skater_id <- substring(nst_ids$href, regexpr("id=", nst_ids$href) + 3)
         nst_ids$skater_id <- substr(nst_ids$skater_id, 1, 7)
@@ -67,7 +71,6 @@ nst_pull <- function(url) {
         nst_data$skater_id <- nst_ids
         
         return(nst_data)
-        
 }
 
 # Pull NST Data - Last 5 GP [Individual]

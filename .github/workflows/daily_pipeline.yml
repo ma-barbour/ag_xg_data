@@ -40,7 +40,10 @@ jobs:
       - name: Create Google Auth File
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-        run: echo "$GCP_SERVICE_ACCOUNT_KEY" > gcp_auth.json
+        run: |
+          cat << EOF > gcp_auth.json
+          $GCP_SERVICE_ACCOUNT_KEY
+          EOF
 
       - name: Run R Script
         run: Rscript ag_xg_data_auto_github.R
