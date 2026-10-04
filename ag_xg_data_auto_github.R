@@ -1045,8 +1045,9 @@ season_away_team_xg <- season_games_xg |>
         rename(team = away_team)
 
 season_team_xg <- season_home_team_xg |>
-        left_join(season_away_team_xg,
+        full_join(season_away_team_xg,
                   by = "team") |>
+        mutate(across(where(is.numeric), ~replace_na(., 0))) |>
         mutate(xg_season = home_team_xg + away_team_xg) |>
         mutate(opp_xg_season = home_opp_xg + away_opp_xg) |>
         mutate(xg_perc_season = xg_season / (xg_season + opp_xg_season)) |>
@@ -1167,8 +1168,9 @@ season_away_team_xg_5v5 <- season_games_xg_5v5 |>
         rename(team = away_team)
 
 season_team_xg_5v5 <- season_home_team_xg_5v5 |>
-        left_join(season_away_team_xg_5v5,
+        full_join(season_away_team_xg_5v5,
                   by = "team") |>
+        mutate(across(where(is.numeric), ~replace_na(., 0))) |>
         mutate(xg_season_5v5 = home_team_xg + away_team_xg) |>
         mutate(opp_xg_season_5v5 = home_opp_xg + away_opp_xg) |>
         mutate(xg_perc_season_5v5 = xg_season_5v5 / (xg_season_5v5 + opp_xg_season_5v5)) |>
