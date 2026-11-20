@@ -37,6 +37,87 @@ refresh_all_data = FALSE
 max_retries <- 3
 sleep_time <- 5
 
+### NHL API HELPER FUNCTION ####################################################
+
+nhl_paginated_pull <- function(base_url,
+                               page_size = 100,
+                               max_retries = 3,
+                               sleep_time = 5,
+                               page_pause = 0.2,
+                               label = "NHL API") {
+        
+        start <- 0
+        total_records <- NULL
+        all_pages <- list()
+        page <- 1
+        sep <- if (grepl("\\?", base_url)) "&" else "?"
+        
+        repeat {
+                page_url <- paste0(
+                        base_url,
+                        sep, "start=", sprintf("%d", start),
+                        "&limit=", page_size
+                )
+                
+                page_json <- NULL
+                retry_count <- 0
+                error_message <- NULL
+                
+                while (retry_count < max_retries && is.null(page_json)) {
+                        page_json <- tryCatch(
+                                {
+                                        read_json(page_url)
+                                },
+                                error = function(e) {
+                                        error_message <<- e$message
+                                        retry_count <<- retry_count + 1
+                                        cat("Error caught at", label, "(start =", start, "):", e$message, "\n")
+                                        if (retry_count < max_retries) {
+                                                cat("Pausing before retry...\n")
+                                                Sys.sleep(sleep_time)
+                                        }
+                                        return(NULL)
+                                }
+                        )
+                }
+                
+                if (is.null(page_json)) {
+                        stop(paste0("Failed at ", label, " (start = ", start, ") after maximum retries. Error message: ", error_message))
+                }
+                
+                if (is.null(total_records) && !is.null(page_json[["total"]])) {
+                        total_records <- as.integer(page_json[["total"]])
+                }
+                
+                page_data <- page_json[["data"]]
+                
+                if (length(page_data) == 0) {
+                        break
+                }
+                
+                all_pages[[page]] <- page_data
+                start <- start + length(page_data)
+                page <- page + 1
+                
+                if (!is.null(total_records) && start >= total_records) {
+                        break
+                }
+                if (is.null(total_records) && length(page_data) < page_size) {
+                        break
+                }
+                
+                Sys.sleep(page_pause)
+        }
+        
+        if (length(all_pages) == 0) {
+                return(tibble())
+        }
+        
+        unlist(all_pages, recursive = FALSE) |>
+                tibble() |>
+                unnest_wider(1)
+}
+
 ### NATURAL STAT TRICK DATA ####################################################
 
 # Pull NST Function
@@ -338,63 +419,37 @@ nst_data_season <- nst_data_season_ind |>
 
 ### NHL GAME LOGS ##############################################################
 
-# NHL URL
-
-nhl_gl_url <- paste0("https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=true&sort=%5B%7B%22property%22:%22points%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22goals%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22assists%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22playerId%22,%22direction%22:%22ASC%22%7D%5D&start=0&limit=-1&cayenneExp=gameDate%3C=%22", current_date - 1, "%2023%3A59%3A59%22%20and%20gameDate%3E=%22", current_date - 30, "%22%20and%20gameTypeId=2")
+nhl_gl_base_url <- paste0(
+        "https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=true",
+        "&sort=%5B%7B%22property%22:%22points%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22goals%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22assists%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22playerId%22,%22direction%22:%22ASC%22%7D,%7B%22property%22:%22gameId%22,%22direction%22:%22ASC%22%7D%5D",
+        "&cayenneExp=gameDate%3C=%22", current_date - 1, "%2023%3A59%3A59%22%20and%20gameDate%3E=%22", current_date - 30, "%22%20and%20gameTypeId=2"
+)
 
 # Pull Data
 
-retry_count <- 0
-error_message <- NULL
+nhl_gl_raw <- nhl_paginated_pull(
+        base_url = nhl_gl_base_url,
+        max_retries = max_retries,
+        sleep_time = sleep_time,
+        label = "nhl_gl_data"
+)
 
-while (retry_count < max_retries) {
-        
-        nhl_gl_data <- tryCatch(
-                
-                # This is the action
-                
-                {nhl_gl_site <- read_json(nhl_gl_url)
-                
-                nhl_gl_data <- nhl_gl_site[["data"]] |>
-                        tibble() |>
-                        unnest_wider(1) |>
-                        select(skater_id = playerId,
-                               skater = skaterFullName,
-                               game_id = gameId,
-                               date = gameDate,
-                               home_away = homeRoad) |>
-                        arrange(desc(date)) |>
-                        arrange(skater_id) |>
-                        group_by(skater_id) |>
-                        mutate(game_count = row_number(),
-                               .after = date) |>
-                        ungroup()},
-                
-                # This deals with errors
-                
-                error = function(e) {
-                        
-                        error_message <<- e$message
-                        retry_count <<- retry_count + 1
-                        cat("Error caught: ", e$message, "\n")
-                        
-                        if (retry_count < max_retries) {
-                                cat("Pausing before retry...\n")
-                                Sys.sleep(sleep_time)}})
-        
-        # This ends the loop if the data was pulled
-        
-        if (is.null(nhl_gl_data) == FALSE) {break}
-        
+if (nrow(nhl_gl_raw) == 0) {
+        stop("Failed at nhl_gl_data: NHL API returned 0 game log records.")
 }
 
-# This logs an error report and stops the script in the event of a failure
-
-if (retry_count >= max_retries) {
-        
-        stop(paste("Failed at nhl_gl_data after maximum retries. Error message:", error_message))
-        
-}
+nhl_gl_data <- nhl_gl_raw |>
+        select(skater_id = playerId,
+               skater = skaterFullName,
+               game_id = gameId,
+               date = gameDate,
+               home_away = homeRoad) |>
+        distinct(game_id, skater_id, .keep_all = TRUE) |>
+        arrange(skater_id, desc(date), desc(game_id)) |>
+        group_by(skater_id) |>
+        mutate(game_count = row_number(),
+               .after = date) |>
+        ungroup()
 
 ### SCHEDULE ###################################################################
 
@@ -871,48 +926,29 @@ five_gp <- five_gp |>
 
 ### ADD SKATER NAMES ###########################################################
 
-retry_count <- 0
-error_message <- NULL
+skater_summary_base_url <- paste0(
+        "https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=false",
+        "&sort=%5B%7B%22property%22:%22points%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22goals%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22assists%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22playerId%22,%22direction%22:%22ASC%22%7D%5D",
+        "&cayenneExp=gameTypeId=2%20and%20seasonId%3C=", current_season, "%20and%20seasonId%3E=", current_season
+)
 
-while (retry_count < max_retries) {
-        
-        skater_names <- tryCatch(
-                
-                # This is the action
-                
-                {skater_names_data <- read_json(paste0("https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=false&sort=%5B%7B%22property%22:%22points%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22goals%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22assists%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22playerId%22,%22direction%22:%22ASC%22%7D%5D&start=0&limit=-1&cayenneExp=gameTypeId=2%20and%20seasonId%3C=", current_season, "%20and%20seasonId%3E=", current_season))
-                
-                skater_names <- skater_names_data[["data"]] |>
-                        tibble() |>
-                        unnest_wider(1) |>
-                        select(skater_id = playerId,
-                               skater = skaterFullName)},
-                
-                # This deals with errors
-                
-                error = function(e) {
-                        
-                        error_message <<- e$message
-                        retry_count <<- retry_count + 1
-                        cat("Error caught: ", e$message, "\n")
-                        
-                        if (retry_count < max_retries) {
-                                cat("Pausing before retry...\n")
-                                Sys.sleep(sleep_time)}})
-        
-        # This ends the loop if the data was pulled
-        
-        if (is.null(skater_names) == FALSE) {break}
-        
+skater_summary_raw <- nhl_paginated_pull(
+        base_url = skater_summary_base_url,
+        max_retries = max_retries,
+        sleep_time = sleep_time,
+        label = "skater_summary"
+)
+
+if (nrow(skater_summary_raw) == 0) {
+        stop("Failed at skater_summary: NHL API returned 0 skater records.")
 }
 
-# This logs an error report and stops the script in the event of a failure
+skater_summary_raw <- skater_summary_raw |>
+        distinct(playerId, .keep_all = TRUE)
 
-if (retry_count >= max_retries) {
-        
-        stop(paste("Failed at skater_names after maximum retries. Error message:", error_message))
-        
-}
+skater_names <- skater_summary_raw |>
+        select(skater_id = playerId,
+               skater = skaterFullName)
 
 # Add names to data
 
@@ -934,69 +970,24 @@ data_validation <- select(full_season, skater, skater_id) |>
         bind_rows(select(five_gp, skater, skater_id)) |>
         unique()
 
-# Get current teams
+# Get current teams and positions from the single paginated summary pull
 
-retry_count <- 0
-error_message <- NULL
+teams_data <- skater_summary_raw |>
+        select(skater_id = playerId,
+               team = teamAbbrevs) |>
+        mutate(team = str_sub(team, -3, -1))
 
-while (retry_count < max_retries) {
-        
-        teams_data <- tryCatch(
-                
-                # This is the action
-                
-                {teams_json <- read_json(paste0("https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=false&sort=%5B%7B%22property%22:%22points%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22goals%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22assists%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22playerId%22,%22direction%22:%22ASC%22%7D%5D&start=0&limit=-1&cayenneExp=gameTypeId=2%20and%20seasonId%3C=", current_season, "%20and%20seasonId%3E=", current_season))
-                
-                teams_data <- teams_json[["data"]] |>
-                        tibble() |>
-                        unnest_wider(1) |>
-                        select(skater_id = playerId,
-                               team = teamAbbrevs) |>
-                        mutate(team = str_sub(team, -3, -1))},
-                
-                # This deals with errors
-                
-                error = function(e) {
-                        
-                        error_message <<- e$message
-                        retry_count <<- retry_count + 1
-                        cat("Error caught: ", e$message, "\n")
-                        
-                        if (retry_count < max_retries) {
-                                cat("Pausing before retry...\n")
-                                Sys.sleep(sleep_time)}})
-        
-        # This ends the loop if the data was pulled
-        
-        if (is.null(teams_data) == FALSE) {break}
-        
-}
-
-# This logs an error report and stops the script in the event of a failure
-
-if (retry_count >= max_retries) {
-        
-        stop(paste("Failed at teams_data after maximum retries. Error message:", error_message))
-        
-}
-
-# Add teams data to data validation
-
-data_validation <- data_validation |>
-        left_join(teams_data, by = "skater_id") |>
-        arrange(skater)
-
-# Add position to data validation
-
-skater_positions <- skater_names_data[["data"]] |>
-        tibble() |>
-        unnest_wider(1) |>
+skater_positions <- skater_summary_raw |>
         select(skater_id = playerId,
                pos = positionCode) |>
         mutate(pos = if_else(pos == "D", "D", "F"))
 
+# Add teams and positions to data validation
+
 data_validation <- data_validation |>
-        left_join(skater_positions, by = "skater_id") 
+        left_join(teams_data, by = "skater_id") |>
+        left_join(skater_positions, by = "skater_id") |>
+        arrange(skater)
 
 # Fix for double Elias Pettersson
 
