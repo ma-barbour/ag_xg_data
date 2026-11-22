@@ -14,6 +14,7 @@ library(janitor)
 library(jsonlite)
 library(lubridate)
 library(zoo)
+library(arrow)
 
 current_season <- 20262027
 
@@ -607,43 +608,45 @@ new_oi_data <- new_oi_data |>
 
 # Update Full Season Data
 
-if(!file.exists("full_season_pbp.rds")) {
+if (file.exists("full_season_pbp.parquet")) {
         
-        write_rds(new_pbp_data,
-                  "full_season_pbp.rds")
-        full_season_pbp <- new_pbp_data
-        
-} else {
-        
-        full_season_pbp <- read_rds("full_season_pbp.rds")
-        
-        full_season_pbp <- full_season_pbp |>
+        full_season_pbp <- read_parquet("full_season_pbp.parquet") |>
                 filter(!game_id %in% new_game_ids) |>
                 bind_rows(new_pbp_data)
         
-        write_rds(full_season_pbp,
-                  "full_season_pbp.rds")
+} else if (file.exists("full_season_pbp.rds")) {
         
-}
-
-if(!file.exists("full_season_oi.rds")) {
-        
-        write_rds(new_oi_data,
-                  "full_season_oi.rds")
-        full_season_oi <- new_oi_data
+        full_season_pbp <- read_rds("full_season_pbp.rds") |>
+                filter(!game_id %in% new_game_ids) |>
+                bind_rows(new_pbp_data)
         
 } else {
         
-        full_season_oi <- read_rds("full_season_oi.rds")
+        full_season_pbp <- new_pbp_data
         
-        full_season_oi <- full_season_oi |>
+}
+
+write_parquet(full_season_pbp, "full_season_pbp.parquet", compression = "zstd")
+
+if (file.exists("full_season_oi.parquet")) {
+        
+        full_season_oi <- read_parquet("full_season_oi.parquet") |>
                 filter(!game_id %in% new_game_ids) |>
                 bind_rows(new_oi_data)
         
-        write_rds(full_season_oi,
-                  "full_season_oi.rds")
+} else if (file.exists("full_season_oi.rds")) {
+        
+        full_season_oi <- read_rds("full_season_oi.rds") |>
+                filter(!game_id %in% new_game_ids) |>
+                bind_rows(new_oi_data)
+        
+} else {
+        
+        full_season_oi <- new_oi_data
         
 }
+
+write_parquet(full_season_oi, "full_season_oi.parquet", compression = "zstd")
 
 # Option To Refresh All Data
 
@@ -675,11 +678,13 @@ if(refresh_all_data == TRUE) {
         full_season_oi <- all_oi_data |>
                 bind_rows()
         
-        write_rds(full_season_pbp,
-                  "full_season_pbp.rds")
+        write_parquet(full_season_pbp,
+                      "full_season_pbp.parquet",
+                      compression = "zstd")
         
-        write_rds(full_season_oi,
-                  "full_season_oi.rds")
+        write_parquet(full_season_oi,
+                      "full_season_oi.parquet",
+                      compression = "zstd")
         
 }
 
