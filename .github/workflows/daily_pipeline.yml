@@ -2,14 +2,14 @@ name: Daily Apples & Ginos Pipeline
 
 on:
   schedule:
-    - cron: '0 6 * * *' 
+    - cron: '0 5 * * *' 
   workflow_dispatch: 
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Crucial: Allows the action to push the updated .rds files back to the repo
+      contents: write # Crucial: Allows the action to push the updated data files back to the repo
 
     steps:
       - name: Checkout repository
@@ -34,6 +34,7 @@ jobs:
             any::jsonlite
             any::lubridate
             any::zoo
+            any::arrow
             any::googledrive
             any::googlesheets4
 
@@ -49,11 +50,10 @@ jobs:
         run: Rscript ag_xg_data_auto_github.R
 
       - name: Commit and Push Updated Data
-        # This saves full_season_pbp.rds and full_season_oi.rds back to the repo 
-        # so the script doesn't have to pull the entire season every single day.
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          git add *.rds
+          git rm --ignore-unmatch full_season_pbp.rds full_season_oi.rds
+          git add *.parquet schedule.rds
           git commit -m "Auto-update season PBP and OI data" || echo "No data changes to commit"
           git push
